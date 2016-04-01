@@ -1,0 +1,219 @@
+.TH WIMLIB-IMAGEX "1" "March 2016" "wimlib 1.9.1" "User Commands"
+.SH NAME
+wimlib-imagex-mount, wimlib-imagex-mountrw, wimlib-imagex-unmount \- Mount and unmount an image from a WIM archive
+.SH SYNOPSIS
+\fBwimlib-imagex mount\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fIDIRECTORY\fR [\fIOPTION\fR...]
+.br
+\fBwimlib-imagex mountrw\fR \fIWIMFILE\fR [\fIIMAGE\fR] \fIDIRECTORY\fR [\fIOPTION\fR...]
+.br
+\fBwimlib-imagex unmount\fR \fIDIRECTORY\fR [\fIOPTION\fR...]
+.SH DESCRIPTION
+On Linux-based systems, the \fBwimlib-imagex mount\fR and \fBwimlib-imagex
+mountrw\fR commands will mount the image in the Windows Imaging (WIM) file
+\fIWIMFILE\fR specified by \fIIMAGE\fR on the directory \fIDIRECTORY\fR using
+FUSE (Filesystem in Userspace).  \fBwimlib-imagex mount\fR will mount the image
+read-only, while \fBwimlib-imagex mountrw\fR will mount the image read-write.
+These commands are also available as simply \fBwimmount\fR, \fBwimmountrw\fR,
+and \fBwimunmount\fR if the appropriate hard links are installed.
+.PP
+\fIIMAGE\fR may be a 1-based index of the image in the WIM to mount, or it may
+be the name of an image in the WIM.  Use the \fBwimlib-imagex info\fR (1)
+command to see the available images in the WIM.  \fIIMAGE\fR may be omitted if
+\fIWIMFILE\fR contains only one image.
+.PP
+The WIM image can be unmounted using the \fBwimlib-imagex unmount\fR
+command.  Changes made to a WIM mounted read-write will be discarded unless the
+\fB--commit\fR flag is provided to \fBwimlib-imagex unmount\fR.
+.SH DATA AND METADATA SUPPORT
+This section documents which WIM features are exposed via the mount support and
+which are not.
+.PP
+The following features are \fIsupported\fR (read/write unless otherwise
+specified):
+.IP \[bu] 4
+Hard links
+.IP \[bu]
+Symbolic links.  Native Windows symbolic links and junctions in a
+mounted WIM image will automatically be translated into UNIX symbolic links,
+potentially with their targets fixed to be valid given the actual mountpoint
+directory.  UNIX symbolic links created in a read-write mounted WIM image will
+automatically be translated into native Windows symbolic links.
+.IP \[bu]
+Named data streams (mostly).  See the \fB--streams-interface\fR option.
+.IP \[bu]
+Standard UNIX permission bits and UNIX special files are supported if the
+\fB--unix-data\fR option is used.
+.PP
+The following features are \fIunsupported\fR:
+.IP \[bu] 4
+Windows security descriptors.  These are not exposed in the mounted filesystem,
+although existing values will be preserved on commit.  New files are not given
+security descriptors.
+.IP \[bu]
+DOS names (8.3 names) (short names).  These are not exposed in the mounted
+filesystem, although existing values will be preserved on commit.  New files are
+not given DOS names.
+.IP \[bu]
+Windows file attributes.  These are not exposed in the mounted filesystem,
+although existing values will be preserved on commit.  New files are assigned
+default attributes based on the UNIX file mode bits.
+.IP \[bu]
+Object IDs.  These are not exposed in the mounted filesystem, although existing
+values will be preserved on commit.  New files are not given object IDs.
+.IP \[bu]
+EFS-encrypted files.  The files themselves will be visible in mounted WIM images
+but their data will not be available.
+.SH SPLIT WIMS
+You may use \fBwimlib-imagex mount\fR to mount an image from a split WIM
+read-only.  However, you may not mount an image from a split WIM read-write.
+.PP
+The \fIWIMFILE\fR argument must specify the first part of the split WIM, while
+the additional parts of the split WIM must be specified in one or more
+\fB--ref\fR="\fIGLOB\fR" options.  Since globbing is built into the \fB--ref\fR
+option, typically only one \fB--ref\fR option is necessary.  For example, the
+names for the split WIM parts usually go something like:
+.PP
+.RS
+.nf
+mywim.swm
+mywim2.swm
+mywim3.swm
+mywim4.swm
+mywim5.swm
+.RE
+.PP
+To mount the first image of this split WIM to the directory "dir", run:
+.PP
+.RS
+wimlib-imagex mount mywim.swm 1 dir --ref="mywim*.swm"
+.RE
+.PP
+.SH NOTES
+\fIAvailablity\fR: Mounting WIM images is only supported on Linux-based systems.
+These commands will not work on other platforms.  Furthermore, the library
+cannot have been configured \fB--without-fuse\fR.
+.PP
+\fIMultiple mounts\fR: You are free to mount many WIM images at the same time,
+provided that there are not two images mounted read-write from the same file at
+the same time.
+.PP
+\fIAppends vs. rebuilds\fR: By default, changes to a read-write WIM are made
+in-place by appending to the WIM.  This is nice for big WIM files, since the
+entire file doesn't have to be rebuilt to make a small change.  But, if you are
+making many changes to a read-write mounted WIM, especially deleting large
+files, it is suggested to provide the \fB--rebuild\fR option to \fBwimlib-imagex
+unmount\fR to force the WIM to be rebuilt, or else run \fBwimlib-imagex
+optimize\fR on the WIM afterwards.
+.PP
+\fIESD files (solid WIMs)\fR: You can mount version 3584 WIMs, which usually
+contain LZMS-compressed solid resources and may carry the \fI.esd\fR file
+extension rather than \fI.wim\fR.  However, such files are not designed for
+random access, so reading data from them when mounted may be very slow.  In
+addition, \fI.esd\fR files downloaded directly by the Windows 8 web downloader
+have encrypted segments, and wimlib cannot mount such files until they are first
+decrypted.
+.SH MOUNT OPTIONS
+.TP 6
+\fB--check\fR
+When reading the WIM, verify its integrity if it contains an integrity table.
+.TP
+\fB--streams-interface\fR=\fIINTERFACE\fR
+This option is inspired by the ntfs-3g filesystem driver (see \fBntfs-3g\fR
+(8)).  It controls how alternate data streams, or named data streams, in WIM
+files are made available.
+.IP ""
+If "none", it will be impossible to read or write the named data streams.
+.IP ""
+If "xattr" (default), named data streams will be accessible through extended
+file attributes, unless this support was disabled when compiling wimlib.  The
+named data streams may be accessed through extended attributes named "user.*",
+where the * is the name of the named data stream.  See \fBsetfattr\fR (1) and
+\fBgetfattr\fR (1).  Note that this is not an ideal interface, since named data
+streams may be larger than the maximum allowed extended attribute size.
+.IP ""
+If "windows", the named data streams will be accessible by specifying the
+filename, then a colon, then the name of the named data stream; for example,
+"myfile:mystream".
+.IP ""
+Please note that named data streams are a somewhat obscure NTFS feature that
+aren't actually used much, even though they complicate the WIM file format
+considerably.  Normally, all you care about is the default or "unnamed" data
+stream.
+.TP
+\fB--debug\fR
+Turn on debugging information printed by the FUSE library, and do not fork into
+the background.
+.TP
+\fB--ref\fR="\fIGLOB\fR"
+File glob of additional WIMs or split WIM parts to reference resources from.
+See \fBSPLIT_WIMS\fR.  This option can be specified multiple times.  Note:
+\fIGLOB\fR is listed in quotes because it is interpreted by
+\fBwimlib-imagex\fR and may need to be quoted to protect against shell
+expansion.
+.TP
+\fB--staging-dir\fR=\fIDIR\fR
+Store temporary staging files in a subdirectory of the directory \fIDIR\fR.
+Only valid for \fBwimlib-imagex mountrw\fR.
+.TP
+\fB--unix-data\fR
+Honor UNIX-specific metadata that was captured by \fBwimlib-imagex
+capture\fR with the \fB--unix-data option\fR.  By default, \fBwimlib-imagex
+mount\fR and \fBwimlib-imagex mountrw\fR will ignore both Windows-style
+security descriptors (which may have been set either from Windows or by
+\fBwimlib-imagex capture\fR from an NTFS-volume) and UNIX-specific metadata.
+In this default mode, all files will simply be owned by the user running
+\fBwimlib-imagex\fR and will have mode 0777.  (Note: they will still not be
+accessible to other users unless you also specify \fB--allow-other\fR.)  If you
+instead provide the \fB--unix-data\fR option, these default permissions will be
+overridden on a per-file basis with the UNIX-specific data when available, and
+in the case of \fBwimlib-imagex mountrw\fR it will be possible to change the
+UNIX permissions using the standard UNIX tools and functions.  In addition, with
+wimlib v1.7.0 and later, you can create device nodes, named pipes, and sockets
+on the mounted filesystem and have them stored in the WIM image.
+.TP
+\fB--allow-other\fR
+Pass the \fBallow_other\fR option to the FUSE mount.  See \fBmount.fuse\fR (8).
+Note: to do this is a non-root user, \fBuser_allow_other\fR needs to be
+specified in /etc/fuse.conf (with the FUSE implementation on Linux, at least).
+.SH UNMOUNT OPTIONS
+.TP
+\fB--commit\fR
+Update the WIM file with the changes that have been made.  Has no effect if the
+mount is read-only.
+.TP
+\fB--force\fR
+In combination with \fB--commit\fR, force the WIM image to be committed even if
+there are open file descriptors to the WIM image.  Any such file descriptors
+will be immediately closed, and the WIM image will be committed and unmounted.
+.TP
+\fB--check\fR
+When writing \fIWIMFILE\fR, include an integrity table.  Has no effect if the
+mount is read-only or if \fB--commit\fR was not specified.  The default behavior
+is to include an integrity table if and only if there was one present before.
+.TP
+\fB--rebuild\fR
+Rebuild the entire WIM rather than appending any new data to the end of it.
+Rebuilding the WIM is slower, but will save a little bit of space that would
+otherwise be left as a hole in the WIM.  Even more space will be saved if the
+read-write mount resulted in streams being deleted from the WIM.  Also see
+.TP
+\fB--new-image\fR
+In combination with \fB--commit\fR for a read-write mounted image, causes the
+modified image to be committed as a new, unnamed image appended to the WIM
+archive.  The original image will be unmodified.
+.SH IMPLEMENTATION DETAILS
+Since a WIM is an archive and not a filesystem, \fBwimlib-imagex mountrw\fR
+creates a temporary staging directory to contain files that are created or
+modified.  This directory is located in the same directory as \fIWIMFILE\fR by
+default, but the location can be set using the \fB--staging-dir\fR option.  When
+the filesystem is unmounted with \fB--commit\fR, the WIM is modified in-place
+(or rebuilt completely with \fB--rebuild\fR), merging in the staging files as
+needed.  Then, the temporary staging directory is deleted.
+.PP
+\fBwimlib-imagex unmount\fR runs in a separate process from the process that
+previously ran \fBwimlib-imagex mount\fR.  When unmounting a read-write
+mounted WIM image with \fB--commit\fR, these two processes communicate using a
+POSIX message queue so that the unmount process can track the progress of the
+mount process.  See \fIsrc/mount_image.c\fR in the sources for details.
+.SH SEE ALSO
+.BR wimlib-imagex (1)
